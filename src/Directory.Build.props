@@ -1,5 +1,11 @@
 <Project>
   <Import Project="../Directory.Build.props" />
-  <!-- Keep normal builds and single-file publishing on the same locked SDK tool dependency graph. -->
-  <PropertyGroup><EnableSingleFileAnalyzer>true</EnableSingleFileAnalyzer><RuntimeIdentifiers>win-x64</RuntimeIdentifiers></PropertyGroup>
+  <!-- Do not enable trim/single-file analyzers here: they add Microsoft.NET.ILLink.Tasks to the lock files at the
+       version bundled with the local SDK, so locked restore breaks on machines/CI with another SDK patch.
+       Single-file publish enables that analyzer by itself, so its restore writes a throwaway lock file under obj/
+       and the committed packages.lock.json files stay SDK-independent. -->
+  <PropertyGroup><RuntimeIdentifiers>win-x64</RuntimeIdentifiers></PropertyGroup>
+  <PropertyGroup Condition="'$(PublishSingleFile)' == 'true'">
+    <NuGetLockFilePath>$(MSBuildProjectDirectory)\obj\publish.packages.lock.json</NuGetLockFilePath>
+  </PropertyGroup>
 </Project>
