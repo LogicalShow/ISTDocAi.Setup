@@ -81,11 +81,19 @@ public sealed class IdentityRenewTests
         File.WriteAllBytes(path, before);
         try
         {
-            var acl = System.IO.FileSystemAclExtensions.GetAccessControl(new FileInfo(path)).GetSecurityDescriptorSddlForm(System.Security.AccessControl.AccessControlSections.Access);
+            // Compare the access rules and the protection flag. The auto-inherited (AI) control flag may be added when
+            // Windows reapplies an inherited DACL; it does not change who can access the file.
+            static (string Rules, bool Protected) Acl(string p)
+            {
+                var security = System.IO.FileSystemAclExtensions.GetAccessControl(new FileInfo(p));
+                var sddl = security.GetSecurityDescriptorSddlForm(System.Security.AccessControl.AccessControlSections.Access);
+                return (sddl[sddl.IndexOf('(')..], security.AreAccessRulesProtected);
+            }
+            var acl = Acl(path);
             var bytes = IdentityConfiguration.Replace(before, Old, New);
             new ServerEnvironment().WriteBytes(path, bytes);
             Assert.That(File.ReadAllBytes(path), Is.EqualTo(bytes));
-            Assert.That(System.IO.FileSystemAclExtensions.GetAccessControl(new FileInfo(path)).GetSecurityDescriptorSddlForm(System.Security.AccessControl.AccessControlSections.Access), Is.EqualTo(acl));
+            Assert.That(Acl(path), Is.EqualTo(acl));
             Assert.That(Directory.GetFiles(Path.GetDirectoryName(path)!, Path.GetFileName(path) + ".identity-*.tmp"), Is.Empty);
         }
         finally { File.Delete(path); }

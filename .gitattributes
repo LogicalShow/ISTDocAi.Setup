@@ -6,7 +6,8 @@
 # Preserve reference/export SQL bytes and deterministic generated SQL on every checkout.
 sql/reference/*.sql -text
 sql/operator/*.sql -text
-src/ISTDocAi.OperatorTool/Templates/*.sql text eol=lf
+# Templates are reviewed with CRLF bytes (the golden hashes in OperatorPureTests); keep CRLF on every checkout.
+src/ISTDocAi.OperatorTool/Templates/*.sql text eol=crlf
 
 ###############################################################################
 # Set default behavior for command prompt diff.

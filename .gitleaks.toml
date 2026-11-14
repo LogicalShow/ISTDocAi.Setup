@@ -10,6 +10,15 @@ paths = ['''^ISTDocAi.Application.Tests/DocAi/Contracts/ContractTests\.cs$''']
 regexTarget = "match"
 regexes = ['''ZG9jYWktdGVzdC12ZWN0b3Itc2VjcmV0LTMyYnl0ZXM=''']
 
+# Azure built-in role definition id "Key Vault Secrets User" (public, identical in every tenant), stored under the
+# bicep role map key `secrets`. Not a credential.
+[[allowlists]]
+description = "Azure built-in role id Key Vault Secrets User"
+condition = "AND"
+paths = ['''^azure/infra/main\.bicep$''', '''^azure/infra/main\.json$''']
+regexTarget = "match"
+regexes = ['''4633458b-17de-408a-b874-0445c86b69e6''']
+
 # Same published HMAC vector reused by worker test doubles.
 [[allowlists]]
 description = "Published vector in worker doubles"
