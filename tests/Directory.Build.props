@@ -1,0 +1,12 @@
+<Project>
+  <Import Project="../Directory.Build.props" />
+  <PropertyGroup>
+    <ISTDocAiRoot Condition="'$(ISTDocAiRoot)' == '' and '$(ISTDOCAI_ROOT)' != ''">$(ISTDOCAI_ROOT)</ISTDocAiRoot>
+    <ISTDocAiRoot Condition="'$(ISTDocAiRoot)' == ''">$(MSBuildThisFileDirectory)..\..\ISTDocAi</ISTDocAiRoot>
+    <ISTDocAiRoot>$([System.IO.Path]::GetFullPath('$(ISTDocAiRoot)'))</ISTDocAiRoot>
+  </PropertyGroup>
+  <ItemGroup><AssemblyMetadata Include="ISTDocAiRoot" Value="$(ISTDocAiRoot)" /></ItemGroup>
+  <Target Name="ValidateISTDocAiRoot" BeforeTargets="PrepareForBuild;CollectPackageReferences;_GenerateRestoreGraphProjectEntry">
+    <Error Condition="!Exists('$(ISTDocAiRoot)/ISTDocAi.sln')" Text="ISTDocAi.sln is missing. Set ISTDOCAI_ROOT to the ISTDocAi repository folder." />
+  </Target>
+</Project>

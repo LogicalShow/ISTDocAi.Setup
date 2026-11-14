@@ -1,0 +1,8 @@
+**/bin/
+**/obj/
+**/.vs/
+TestResults/
+publish/
+*.pfx
+**/appsettings.Local.json
+*.user

@@ -1,0 +1,1484 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.48.1.52935",
+      "templateHash": "13085516219753028220"
+    }
+  },
+  "parameters": {
+    "prefix": {
+      "type": "string",
+      "defaultValue": "docai",
+      "minLength": 2,
+      "maxLength": 10
+    },
+    "environment": {
+      "type": "string",
+      "allowedValues": [
+        "dev",
+        "prod"
+      ]
+    },
+    "hostingMode": {
+      "type": "string",
+      "defaultValue": "appService",
+      "allowedValues": [
+        "appService",
+        "onPremises",
+        "local"
+      ]
+    },
+    "onPremisesPrincipalObjectId": {
+      "type": "string",
+      "defaultValue": ""
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]"
+    },
+    "documentIntelligenceMode": {
+      "type": "string",
+      "defaultValue": "create",
+      "allowedValues": [
+        "create",
+        "existing"
+      ]
+    },
+    "existingDocumentIntelligenceName": {
+      "type": "string",
+      "defaultValue": ""
+    },
+    "existingDocumentIntelligenceResourceGroup": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().name]"
+    },
+    "appServiceSku": {
+      "type": "string",
+      "defaultValue": "B1"
+    },
+    "sqlSku": {
+      "type": "string",
+      "defaultValue": "S0"
+    },
+    "storageSku": {
+      "type": "string",
+      "defaultValue": "Standard_LRS",
+      "allowedValues": [
+        "Standard_LRS",
+        "Standard_ZRS",
+        "Standard_GRS",
+        "Standard_RAGRS"
+      ]
+    },
+    "sqlAdminGroupName": {
+      "type": "string"
+    },
+    "sqlAdminGroupObjectId": {
+      "type": "string"
+    },
+    "developerGroupObjectId": {
+      "type": "string",
+      "defaultValue": ""
+    },
+    "purgeProtection": {
+      "type": "bool",
+      "defaultValue": "[equals(parameters('environment'), 'prod')]"
+    },
+    "disableInsightsLocalAuth": {
+      "type": "bool",
+      "defaultValue": false
+    },
+    "policyEffect": {
+      "type": "string",
+      "defaultValue": "Audit",
+      "allowedValues": [
+        "Audit",
+        "Deny",
+        "Disabled"
+      ]
+    },
+    "enableAlerts": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "When false, nobody is notified of the operational conditions in plan section 12. Turning alerts on is a one-value change plus a redeploy."
+      }
+    },
+    "alertEmails": {
+      "type": "array"
+    },
+    "monthlyBudget": {
+      "type": "int",
+      "defaultValue": 150,
+      "minValue": 1
+    },
+    "budgetStartDate": {
+      "type": "string",
+      "metadata": {
+        "description": "First day of budget start month, YYYY-MM-01; keep stable on redeploy."
+      }
+    }
+  },
+  "variables": {
+    "cloudHosting": "[equals(parameters('hostingMode'), 'appService')]",
+    "localHosting": "[equals(parameters('hostingMode'), 'local')]",
+    "telemetryEnabled": "[not(variables('localHosting'))]",
+    "base": "[toLower(format('{0}-{1}', parameters('prefix'), parameters('environment')))]",
+    "unique": "[uniqueString(resourceGroup().id, parameters('prefix'), parameters('environment'))]",
+    "storageName": "[format('{0}{1}{2}', toLower(replace(parameters('prefix'), '-', '')), parameters('environment'), take(variables('unique'), 8))]",
+    "roles": {
+      "cognitive": "a97b65f3-24c7-4388-baec-2e87135dc908",
+      "blob": "ba92f5b4-2d11-453d-a403-e96b0029c9fe",
+      "secrets": "4633458b-17de-408a-b874-0445c86b69e6",
+      "officer": "b86a8fe4-44ce-4948-aee5-eccb2c155cd7"
+    },
+    "diName": "[if(equals(parameters('documentIntelligenceMode'), 'existing'), parameters('existingDocumentIntelligenceName'), format('{0}-di-{1}', variables('base'), variables('unique')))]",
+    "diResourceGroup": "[if(equals(parameters('documentIntelligenceMode'), 'existing'), parameters('existingDocumentIntelligenceResourceGroup'), resourceGroup().name)]",
+    "policies": [
+      {
+        "name": "ai-no-keys",
+        "id": "71ef260a-8f18-47b7-abcb-62d0673d94dc"
+      },
+      {
+        "name": "storage-no-keys",
+        "id": "8c6a50c6-9ffd-4ae7-986f-5fa6111f9a54"
+      },
+      {
+        "name": "sql-entra-only",
+        "id": "b3a22bc9-66de-45fb-98fa-00f5df42f41a"
+      },
+      {
+        "name": "servicebus-no-keys",
+        "id": "cfb11c26-f069-4c14-8e36-56c394dae5af"
+      }
+    ]
+  },
+  "resources": [
+    {
+      "condition": "[variables('telemetryEnabled')]",
+      "type": "Microsoft.OperationalInsights/workspaces",
+      "apiVersion": "2023-09-01",
+      "name": "[format('{0}-logs', variables('base'))]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "retentionInDays": 90,
+        "sku": {
+          "name": "PerGB2018"
+        }
+      }
+    },
+    {
+      "condition": "[variables('telemetryEnabled')]",
+      "type": "Microsoft.Insights/components",
+      "apiVersion": "2020-02-02",
+      "name": "[format('{0}-insights', variables('base'))]",
+      "location": "[parameters('location')]",
+      "kind": "web",
+      "properties": {
+        "Application_Type": "web",
+        "WorkspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', format('{0}-logs', variables('base')))]",
+        "RetentionInDays": 90,
+        "DisableLocalAuth": "[parameters('disableInsightsLocalAuth')]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.OperationalInsights/workspaces', format('{0}-logs', variables('base')))]"
+      ]
+    },
+    {
+      "condition": "[variables('cloudHosting')]",
+      "type": "Microsoft.Web/serverfarms",
+      "apiVersion": "2024-11-01",
+      "name": "[format('{0}-plan', variables('base'))]",
+      "location": "[parameters('location')]",
+      "kind": "linux",
+      "sku": {
+        "name": "[parameters('appServiceSku')]",
+        "capacity": 1
+      },
+      "properties": {
+        "reserved": true
+      }
+    },
+    {
+      "condition": "[variables('cloudHosting')]",
+      "type": "Microsoft.Web/sites",
+      "apiVersion": "2024-11-01",
+      "name": "[format('{0}-app-{1}', variables('base'), variables('unique'))]",
+      "location": "[parameters('location')]",
+      "kind": "app,linux",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', format('{0}-plan', variables('base')))]",
+        "httpsOnly": true,
+        "clientAffinityEnabled": false,
+        "siteConfig": {
+          "linuxFxVersion": "DOTNETCORE|10.0",
+          "alwaysOn": true,
+          "healthCheckPath": "/health/live",
+          "minTlsVersion": "1.2",
+          "scmMinTlsVersion": "1.2",
+          "ftpsState": "Disabled",
+          "http20Enabled": true,
+          "appSettings": [
+            {
+              "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
+              "value": "[reference(resourceId('Microsoft.Insights/components', format('{0}-insights', variables('base'))), '2020-02-02').ConnectionString]"
+            },
+            {
+              "name": "DocAi__Telemetry__UseEntra",
+              "value": "[string(parameters('disableInsightsLocalAuth'))]"
+            },
+            {
+              "name": "ConnectionStrings__DefaultConnection",
+              "value": "[format('Server=tcp:{0},1433;Database={1};Authentication=Active Directory Managed Identity;Encrypt=True;TrustServerCertificate=False', reference(resourceId('Microsoft.Sql/servers', format('{0}-sql-{1}', variables('base'), variables('unique'))), '2023-08-01').fullyQualifiedDomainName, format('{0}-db', variables('base')))]"
+            },
+            {
+              "name": "DocAi__Blob__AccountUrl",
+              "value": "[reference(resourceId('Microsoft.Storage/storageAccounts', variables('storageName')), '2025-01-01').primaryEndpoints.blob]"
+            },
+            {
+              "name": "DocAi__Blob__Container",
+              "value": "documents"
+            },
+            {
+              "name": "DocAi__DocumentIntelligence__Endpoint",
+              "value": "[if(equals(parameters('documentIntelligenceMode'), 'existing'), reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('existingDocumentIntelligenceResourceGroup')), 'Microsoft.CognitiveServices/accounts', parameters('existingDocumentIntelligenceName')), '2025-06-01').endpoint, reference(resourceId('Microsoft.CognitiveServices/accounts', format('{0}-di-{1}', variables('base'), variables('unique'))), '2025-06-01').endpoint)]"
+            },
+            {
+              "name": "DocAi__Secrets__Provider",
+              "value": "KeyVault"
+            },
+            {
+              "name": "DocAi__KeyVault__Url",
+              "value": "[reference(resourceId('Microsoft.KeyVault/vaults', format('{0}-kv-{1}', variables('base'), take(variables('unique'), 5))), '2024-11-01').vaultUri]"
+            },
+            {
+              "name": "Signals__Enabled",
+              "value": "true"
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Sql/servers/databases', format('{0}-sql-{1}', variables('base'), variables('unique')), format('{0}-db', variables('base')))]",
+        "[resourceId('Microsoft.CognitiveServices/accounts', format('{0}-di-{1}', variables('base'), variables('unique')))]",
+        "[resourceId('Microsoft.Insights/components', format('{0}-insights', variables('base')))]",
+        "[resourceId('Microsoft.Web/serverfarms', format('{0}-plan', variables('base')))]",
+        "[resourceId('Microsoft.Sql/servers', format('{0}-sql-{1}', variables('base'), variables('unique')))]",
+        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]",
+        "[resourceId('Microsoft.KeyVault/vaults', format('{0}-kv-{1}', variables('base'), take(variables('unique'), 5)))]"
+      ]
+    },
+    {
+      "condition": "[variables('cloudHosting')]",
+      "type": "Microsoft.Web/sites/basicPublishingCredentialsPolicies",
+      "apiVersion": "2024-11-01",
+      "name": "[format('{0}/{1}', format('{0}-app-{1}', variables('base'), variables('unique')), 'ftp')]",
+      "properties": {
+        "allow": false
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', format('{0}-app-{1}', variables('base'), variables('unique')))]"
+      ]
+    },
+    {
+      "condition": "[variables('cloudHosting')]",
+      "type": "Microsoft.Web/sites/basicPublishingCredentialsPolicies",
+      "apiVersion": "2024-11-01",
+      "name": "[format('{0}/{1}', format('{0}-app-{1}', variables('base'), variables('unique')), 'scm')]",
+      "properties": {
+        "allow": false
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', format('{0}-app-{1}', variables('base'), variables('unique')))]"
+      ]
+    },
+    {
+      "condition": "[variables('cloudHosting')]",
+      "type": "Microsoft.Sql/servers",
+      "apiVersion": "2023-08-01",
+      "name": "[format('{0}-sql-{1}', variables('base'), variables('unique'))]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "version": "12.0",
+        "minimalTlsVersion": "1.2",
+        "publicNetworkAccess": "Enabled",
+        "administrators": {
+          "administratorType": "ActiveDirectory",
+          "principalType": "Group",
+          "login": "[parameters('sqlAdminGroupName')]",
+          "sid": "[parameters('sqlAdminGroupObjectId')]",
+          "tenantId": "[tenant().tenantId]",
+          "azureADOnlyAuthentication": true
+        }
+      }
+    },
+    {
+      "condition": "[variables('cloudHosting')]",
+      "type": "Microsoft.Sql/servers/azureADOnlyAuthentications",
+      "apiVersion": "2023-08-01",
+      "name": "[format('{0}/{1}', format('{0}-sql-{1}', variables('base'), variables('unique')), 'Default')]",
+      "properties": {
+        "azureADOnlyAuthentication": true
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Sql/servers', format('{0}-sql-{1}', variables('base'), variables('unique')))]"
+      ]
+    },
+    {
+      "condition": "[variables('cloudHosting')]",
+      "type": "Microsoft.Sql/servers/firewallRules",
+      "apiVersion": "2023-08-01",
+      "name": "[format('{0}/{1}', format('{0}-sql-{1}', variables('base'), variables('unique')), 'AllowAzureServices')]",
+      "properties": {
+        "startIpAddress": "0.0.0.0",
+        "endIpAddress": "0.0.0.0"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Sql/servers', format('{0}-sql-{1}', variables('base'), variables('unique')))]"
+      ]
+    },
+    {
+      "condition": "[variables('cloudHosting')]",
+      "type": "Microsoft.Sql/servers/databases",
+      "apiVersion": "2023-08-01",
+      "name": "[format('{0}/{1}', format('{0}-sql-{1}', variables('base'), variables('unique')), format('{0}-db', variables('base')))]",
+      "location": "[parameters('location')]",
+      "sku": {
+        "name": "[parameters('sqlSku')]"
+      },
+      "properties": {
+        "collation": "SQL_Latin1_General_CP1_CI_AS"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Sql/servers', format('{0}-sql-{1}', variables('base'), variables('unique')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "apiVersion": "2025-01-01",
+      "name": "[variables('storageName')]",
+      "location": "[parameters('location')]",
+      "kind": "StorageV2",
+      "sku": {
+        "name": "[parameters('storageSku')]"
+      },
+      "properties": {
+        "allowSharedKeyAccess": false,
+        "allowBlobPublicAccess": false,
+        "minimumTlsVersion": "TLS1_2",
+        "supportsHttpsTrafficOnly": true,
+        "defaultToOAuthAuthentication": true,
+        "publicNetworkAccess": "Enabled"
+      }
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/blobServices",
+      "apiVersion": "2025-01-01",
+      "name": "[format('{0}/{1}', variables('storageName'), 'default')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]"
+      ]
+    },
+    {
+      "copy": {
+        "name": "containers",
+        "count": "[length(createArray('documents', 'results'))]"
+      },
+      "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+      "apiVersion": "2025-01-01",
+      "name": "[format('{0}/{1}/{2}', variables('storageName'), 'default', createArray('documents', 'results')[copyIndex()])]",
+      "properties": {
+        "publicAccess": "None"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/blobServices', variables('storageName'), 'default')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/managementPolicies",
+      "apiVersion": "2025-01-01",
+      "name": "[format('{0}/{1}', variables('storageName'), 'default')]",
+      "properties": {
+        "policy": {
+          "copy": [
+            {
+              "name": "rules",
+              "count": "[length(createArray(createObject('container', 'documents', 'days', 90), createObject('container', 'results', 'days', 30)))]",
+              "input": {
+                "name": "[format('delete-{0}', createArray(createObject('container', 'documents', 'days', 90), createObject('container', 'results', 'days', 30))[copyIndex('rules')].container)]",
+                "enabled": true,
+                "type": "Lifecycle",
+                "definition": {
+                  "filters": {
+                    "blobTypes": [
+                      "blockBlob"
+                    ],
+                    "prefixMatch": [
+                      "[format('{0}/', createArray(createObject('container', 'documents', 'days', 90), createObject('container', 'results', 'days', 30))[copyIndex('rules')].container)]"
+                    ]
+                  },
+                  "actions": {
+                    "baseBlob": {
+                      "delete": {
+                        "daysAfterCreationGreaterThan": "[createArray(createObject('container', 'documents', 'days', 90), createObject('container', 'results', 'days', 30))[copyIndex('rules')].days]"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.KeyVault/vaults",
+      "apiVersion": "2024-11-01",
+      "name": "[format('{0}-kv-{1}', variables('base'), take(variables('unique'), 5))]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "tenantId": "[tenant().tenantId]",
+        "sku": {
+          "family": "A",
+          "name": "standard"
+        },
+        "enableRbacAuthorization": true,
+        "enableSoftDelete": true,
+        "softDeleteRetentionInDays": 90,
+        "enablePurgeProtection": "[if(parameters('purgeProtection'), true(), null())]",
+        "publicNetworkAccess": "Enabled"
+      }
+    },
+    {
+      "condition": "[equals(parameters('documentIntelligenceMode'), 'create')]",
+      "type": "Microsoft.CognitiveServices/accounts",
+      "apiVersion": "2025-06-01",
+      "name": "[format('{0}-di-{1}', variables('base'), variables('unique'))]",
+      "location": "[parameters('location')]",
+      "kind": "FormRecognizer",
+      "sku": {
+        "name": "S0"
+      },
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "customSubDomainName": "[format('{0}-di-{1}', variables('base'), variables('unique'))]",
+        "disableLocalAuth": true,
+        "publicNetworkAccess": "Enabled"
+      }
+    },
+    {
+      "copy": {
+        "name": "policyAssignments",
+        "count": "[length(variables('policies'))]"
+      },
+      "type": "Microsoft.Authorization/policyAssignments",
+      "apiVersion": "2024-04-01",
+      "name": "[format('{0}-{1}', variables('base'), variables('policies')[copyIndex()].name)]",
+      "properties": {
+        "policyDefinitionId": "[tenantResourceId('Microsoft.Authorization/policyDefinitions', variables('policies')[copyIndex()].id)]",
+        "parameters": {
+          "effect": {
+            "value": "[parameters('policyEffect')]"
+          }
+        }
+      }
+    },
+    {
+      "condition": "[equals(parameters('hostingMode'), 'onPremises')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "onprem-principal-guard",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "principalObjectId": {
+            "value": "[trim(parameters('onPremisesPrincipalObjectId'))]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.48.1.52935",
+              "templateHash": "7104453815695835669"
+            }
+          },
+          "parameters": {
+            "principalObjectId": {
+              "type": "string",
+              "minLength": 1,
+              "metadata": {
+                "description": "onPremises requires a non-empty service principal object ID."
+              }
+            }
+          },
+          "resources": [],
+          "outputs": {
+            "validated": {
+              "type": "string",
+              "value": "[parameters('principalObjectId')]"
+            }
+          }
+        }
+      }
+    },
+    {
+      "condition": "[variables('localHosting')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "local-developer-group-guard",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "developerGroupObjectId": {
+            "value": "[trim(parameters('developerGroupObjectId'))]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.48.1.52935",
+              "templateHash": "17487656404684111947"
+            }
+          },
+          "parameters": {
+            "developerGroupObjectId": {
+              "type": "string",
+              "minLength": 1,
+              "metadata": {
+                "description": "Local hosting requires a non-empty developerGroupObjectId."
+              }
+            }
+          },
+          "resources": [],
+          "outputs": {
+            "validated": {
+              "type": "string",
+              "value": "[parameters('developerGroupObjectId')]"
+            }
+          }
+        }
+      }
+    },
+    {
+      "condition": "[equals(parameters('environment'), 'prod')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('{0}-prod-guard', variables('base'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "developerGroupObjectId": {
+            "value": "[parameters('developerGroupObjectId')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.48.1.52935",
+              "templateHash": "16931481662008326444"
+            }
+          },
+          "parameters": {
+            "developerGroupObjectId": {
+              "type": "string",
+              "allowedValues": [
+                ""
+              ]
+            }
+          },
+          "resources": [],
+          "outputs": {
+            "validated": {
+              "type": "bool",
+              "value": "[empty(parameters('developerGroupObjectId'))]"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('{0}-prefix-guard', variables('base'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "invalidPrefix": "[if(and(equals(length(filter(range(0, length(parameters('prefix'))), lambda('i', not(contains('abcdefghijklmnopqrstuvwxyz0123456789-', substring(parameters('prefix'), lambdaVariables('i'), 1)))))), 0), contains('abcdefghijklmnopqrstuvwxyz', substring(parameters('prefix'), 0, 1))), createObject('value', ''), createObject('value', parameters('prefix')))]"
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.48.1.52935",
+              "templateHash": "13604065707679249531"
+            }
+          },
+          "parameters": {
+            "invalidPrefix": {
+              "type": "string",
+              "allowedValues": [
+                ""
+              ]
+            }
+          },
+          "resources": [],
+          "outputs": {
+            "validated": {
+              "type": "bool",
+              "value": "[empty(parameters('invalidPrefix'))]"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('{0}-di-guard', variables('base'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "existingDocumentIntelligenceName": "[if(equals(parameters('documentIntelligenceMode'), 'existing'), createObject('value', trim(parameters('existingDocumentIntelligenceName'))), createObject('value', 'create'))]"
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.48.1.52935",
+              "templateHash": "9702487410456498205"
+            }
+          },
+          "parameters": {
+            "existingDocumentIntelligenceName": {
+              "type": "string",
+              "minLength": 1,
+              "metadata": {
+                "description": "Existing mode requires a non-empty existingDocumentIntelligenceName."
+              }
+            }
+          },
+          "resources": [],
+          "outputs": {
+            "validated": {
+              "type": "bool",
+              "value": "[not(empty(parameters('existingDocumentIntelligenceName')))]"
+            }
+          }
+        }
+      }
+    },
+    {
+      "condition": "[not(variables('localHosting'))]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('{0}-app-roles', variables('base'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "principalId": "[if(variables('cloudHosting'), createObject('value', reference(resourceId('Microsoft.Web/sites', format('{0}-app-{1}', variables('base'), variables('unique'))), '2024-11-01', 'full').identity.principalId), createObject('value', parameters('onPremisesPrincipalObjectId')))]",
+          "principalType": {
+            "value": "ServicePrincipal"
+          },
+          "storageName": {
+            "value": "[variables('storageName')]"
+          },
+          "vaultName": {
+            "value": "[format('{0}-kv-{1}', variables('base'), take(variables('unique'), 5))]"
+          },
+          "blobRole": {
+            "value": "[variables('roles').blob]"
+          },
+          "vaultRoleId": {
+            "value": "[variables('roles').secrets]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.48.1.52935",
+              "templateHash": "16230493938763893236"
+            }
+          },
+          "parameters": {
+            "principalId": {
+              "type": "string"
+            },
+            "principalType": {
+              "type": "string",
+              "allowedValues": [
+                "ServicePrincipal",
+                "Group"
+              ]
+            },
+            "storageName": {
+              "type": "string"
+            },
+            "vaultName": {
+              "type": "string"
+            },
+            "blobRole": {
+              "type": "string"
+            },
+            "vaultRoleId": {
+              "type": "string"
+            },
+            "officerRoleId": {
+              "type": "string",
+              "defaultValue": ""
+            }
+          },
+          "resources": [
+            {
+              "copy": {
+                "name": "blob",
+                "count": "[length(range(0, 2))]"
+              },
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.Storage/storageAccounts/blobServices/containers', parameters('storageName'), 'default', createArray('documents', 'results')[range(0, 2)[copyIndex()]])]",
+              "name": "[guid(resourceId('Microsoft.Storage/storageAccounts/blobServices/containers', parameters('storageName'), 'default', createArray('documents', 'results')[range(0, 2)[copyIndex()]]), parameters('principalId'), parameters('blobRole'))]",
+              "properties": {
+                "principalId": "[parameters('principalId')]",
+                "principalType": "[parameters('principalType')]",
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', parameters('blobRole'))]"
+              }
+            },
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.KeyVault/vaults', parameters('vaultName'))]",
+              "name": "[guid(resourceId('Microsoft.KeyVault/vaults', parameters('vaultName')), parameters('principalId'), parameters('vaultRoleId'))]",
+              "properties": {
+                "principalId": "[parameters('principalId')]",
+                "principalType": "[parameters('principalType')]",
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', parameters('vaultRoleId'))]"
+              }
+            },
+            {
+              "condition": "[not(empty(parameters('officerRoleId')))]",
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.KeyVault/vaults', parameters('vaultName'))]",
+              "name": "[guid(resourceId('Microsoft.KeyVault/vaults', parameters('vaultName')), parameters('principalId'), parameters('officerRoleId'))]",
+              "properties": {
+                "principalId": "[parameters('principalId')]",
+                "principalType": "[parameters('principalType')]",
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', parameters('officerRoleId'))]"
+              }
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', format('{0}-app-{1}', variables('base'), variables('unique')))]",
+        "containers",
+        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]",
+        "[resourceId('Microsoft.KeyVault/vaults', format('{0}-kv-{1}', variables('base'), take(variables('unique'), 5)))]"
+      ]
+    },
+    {
+      "condition": "[and(or(variables('localHosting'), equals(parameters('environment'), 'dev')), not(empty(parameters('developerGroupObjectId'))))]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('{0}-developer-roles', variables('base'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "principalId": "[if(variables('localHosting'), createObject('value', reference(resourceId('Microsoft.Resources/deployments', 'local-developer-group-guard'), '2025-04-01').outputs.validated.value), createObject('value', parameters('developerGroupObjectId')))]",
+          "principalType": {
+            "value": "Group"
+          },
+          "storageName": {
+            "value": "[variables('storageName')]"
+          },
+          "vaultName": {
+            "value": "[format('{0}-kv-{1}', variables('base'), take(variables('unique'), 5))]"
+          },
+          "blobRole": {
+            "value": "[variables('roles').blob]"
+          },
+          "vaultRoleId": {
+            "value": "[variables('roles').secrets]"
+          },
+          "officerRoleId": {
+            "value": "[variables('roles').officer]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.48.1.52935",
+              "templateHash": "16230493938763893236"
+            }
+          },
+          "parameters": {
+            "principalId": {
+              "type": "string"
+            },
+            "principalType": {
+              "type": "string",
+              "allowedValues": [
+                "ServicePrincipal",
+                "Group"
+              ]
+            },
+            "storageName": {
+              "type": "string"
+            },
+            "vaultName": {
+              "type": "string"
+            },
+            "blobRole": {
+              "type": "string"
+            },
+            "vaultRoleId": {
+              "type": "string"
+            },
+            "officerRoleId": {
+              "type": "string",
+              "defaultValue": ""
+            }
+          },
+          "resources": [
+            {
+              "copy": {
+                "name": "blob",
+                "count": "[length(range(0, 2))]"
+              },
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.Storage/storageAccounts/blobServices/containers', parameters('storageName'), 'default', createArray('documents', 'results')[range(0, 2)[copyIndex()]])]",
+              "name": "[guid(resourceId('Microsoft.Storage/storageAccounts/blobServices/containers', parameters('storageName'), 'default', createArray('documents', 'results')[range(0, 2)[copyIndex()]]), parameters('principalId'), parameters('blobRole'))]",
+              "properties": {
+                "principalId": "[parameters('principalId')]",
+                "principalType": "[parameters('principalType')]",
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', parameters('blobRole'))]"
+              }
+            },
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.KeyVault/vaults', parameters('vaultName'))]",
+              "name": "[guid(resourceId('Microsoft.KeyVault/vaults', parameters('vaultName')), parameters('principalId'), parameters('vaultRoleId'))]",
+              "properties": {
+                "principalId": "[parameters('principalId')]",
+                "principalType": "[parameters('principalType')]",
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', parameters('vaultRoleId'))]"
+              }
+            },
+            {
+              "condition": "[not(empty(parameters('officerRoleId')))]",
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.KeyVault/vaults', parameters('vaultName'))]",
+              "name": "[guid(resourceId('Microsoft.KeyVault/vaults', parameters('vaultName')), parameters('principalId'), parameters('officerRoleId'))]",
+              "properties": {
+                "principalId": "[parameters('principalId')]",
+                "principalType": "[parameters('principalType')]",
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', parameters('officerRoleId'))]"
+              }
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "containers",
+        "[resourceId('Microsoft.Resources/deployments', 'local-developer-group-guard')]",
+        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]",
+        "[resourceId('Microsoft.KeyVault/vaults', format('{0}-kv-{1}', variables('base'), take(variables('unique'), 5)))]"
+      ]
+    },
+    {
+      "condition": "[not(variables('localHosting'))]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('{0}-app-di-role', variables('base'))]",
+      "resourceGroup": "[variables('diResourceGroup')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "diName": {
+            "value": "[variables('diName')]"
+          },
+          "principalId": "[if(variables('cloudHosting'), createObject('value', reference(resourceId('Microsoft.Web/sites', format('{0}-app-{1}', variables('base'), variables('unique'))), '2024-11-01', 'full').identity.principalId), createObject('value', parameters('onPremisesPrincipalObjectId')))]",
+          "principalType": {
+            "value": "ServicePrincipal"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.48.1.52935",
+              "templateHash": "3348672721405439019"
+            }
+          },
+          "parameters": {
+            "diName": {
+              "type": "string"
+            },
+            "principalId": {
+              "type": "string"
+            },
+            "principalType": {
+              "type": "string",
+              "allowedValues": [
+                "ServicePrincipal",
+                "Group"
+              ]
+            }
+          },
+          "variables": {
+            "cognitiveRole": "a97b65f3-24c7-4388-baec-2e87135dc908"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.CognitiveServices/accounts', parameters('diName'))]",
+              "name": "[guid(resourceId('Microsoft.CognitiveServices/accounts', parameters('diName')), parameters('principalId'), variables('cognitiveRole'))]",
+              "properties": {
+                "principalId": "[parameters('principalId')]",
+                "principalType": "[parameters('principalType')]",
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('cognitiveRole'))]"
+              }
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', format('{0}-app-{1}', variables('base'), variables('unique')))]",
+        "[resourceId('Microsoft.CognitiveServices/accounts', format('{0}-di-{1}', variables('base'), variables('unique')))]"
+      ]
+    },
+    {
+      "condition": "[and(or(variables('localHosting'), equals(parameters('environment'), 'dev')), not(empty(parameters('developerGroupObjectId'))))]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('{0}-developer-di-role', variables('base'))]",
+      "resourceGroup": "[variables('diResourceGroup')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "diName": {
+            "value": "[variables('diName')]"
+          },
+          "principalId": "[if(variables('localHosting'), createObject('value', reference(resourceId('Microsoft.Resources/deployments', 'local-developer-group-guard'), '2025-04-01').outputs.validated.value), createObject('value', parameters('developerGroupObjectId')))]",
+          "principalType": {
+            "value": "Group"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.48.1.52935",
+              "templateHash": "3348672721405439019"
+            }
+          },
+          "parameters": {
+            "diName": {
+              "type": "string"
+            },
+            "principalId": {
+              "type": "string"
+            },
+            "principalType": {
+              "type": "string",
+              "allowedValues": [
+                "ServicePrincipal",
+                "Group"
+              ]
+            }
+          },
+          "variables": {
+            "cognitiveRole": "a97b65f3-24c7-4388-baec-2e87135dc908"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.CognitiveServices/accounts', parameters('diName'))]",
+              "name": "[guid(resourceId('Microsoft.CognitiveServices/accounts', parameters('diName')), parameters('principalId'), variables('cognitiveRole'))]",
+              "properties": {
+                "principalId": "[parameters('principalId')]",
+                "principalType": "[parameters('principalType')]",
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('cognitiveRole'))]"
+              }
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.CognitiveServices/accounts', format('{0}-di-{1}', variables('base'), variables('unique')))]",
+        "[resourceId('Microsoft.Resources/deployments', 'local-developer-group-guard')]"
+      ]
+    },
+    {
+      "condition": "[and(variables('telemetryEnabled'), parameters('disableInsightsLocalAuth'))]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('{0}-insights-role', variables('base'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "insightsName": {
+            "value": "[format('{0}-insights', variables('base'))]"
+          },
+          "principalId": "[if(variables('cloudHosting'), createObject('value', reference(resourceId('Microsoft.Web/sites', format('{0}-app-{1}', variables('base'), variables('unique'))), '2024-11-01', 'full').identity.principalId), createObject('value', parameters('onPremisesPrincipalObjectId')))]"
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.48.1.52935",
+              "templateHash": "1731551967600675466"
+            }
+          },
+          "parameters": {
+            "insightsName": {
+              "type": "string"
+            },
+            "principalId": {
+              "type": "string"
+            }
+          },
+          "variables": {
+            "roleId": "3913510d-42f4-4e42-8a64-420c390055eb"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.Insights/components', parameters('insightsName'))]",
+              "name": "[guid(resourceId('Microsoft.Insights/components', parameters('insightsName')), parameters('principalId'), variables('roleId'))]",
+              "properties": {
+                "principalId": "[parameters('principalId')]",
+                "principalType": "ServicePrincipal",
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('roleId'))]"
+              }
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', format('{0}-app-{1}', variables('base'), variables('unique')))]",
+        "[resourceId('Microsoft.Insights/components', format('{0}-insights', variables('base')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('{0}-monitoring', variables('base'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "base": {
+            "value": "[variables('base')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "insightsId": "[if(variables('telemetryEnabled'), createObject('value', resourceId('Microsoft.Insights/components', format('{0}-insights', variables('base')))), createObject('value', ''))]",
+          "appHost": "[if(variables('cloudHosting'), createObject('value', reference(resourceId('Microsoft.Web/sites', format('{0}-app-{1}', variables('base'), variables('unique'))), '2024-11-01').defaultHostName), createObject('value', ''))]",
+          "enableAlerts": {
+            "value": "[and(variables('telemetryEnabled'), parameters('enableAlerts'))]"
+          },
+          "alertEmails": {
+            "value": "[parameters('alertEmails')]"
+          },
+          "monthlyBudget": {
+            "value": "[parameters('monthlyBudget')]"
+          },
+          "budgetStartDate": {
+            "value": "[parameters('budgetStartDate')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.48.1.52935",
+              "templateHash": "10858686078773230495"
+            }
+          },
+          "parameters": {
+            "base": {
+              "type": "string"
+            },
+            "location": {
+              "type": "string"
+            },
+            "insightsId": {
+              "type": "string"
+            },
+            "appHost": {
+              "type": "string"
+            },
+            "enableAlerts": {
+              "type": "bool",
+              "defaultValue": false
+            },
+            "alertEmails": {
+              "type": "array"
+            },
+            "monthlyBudget": {
+              "type": "int"
+            },
+            "budgetStartDate": {
+              "type": "string"
+            }
+          },
+          "variables": {
+            "alerts": [
+              {
+                "name": "certificate-expiring",
+                "severity": 2,
+                "frequency": "PT1H",
+                "window": "P1D",
+                "query": "traces | where customDimensions.event == \"identity.certificate_expiring\""
+              },
+              {
+                "name": "queue-stuck",
+                "severity": 2,
+                "frequency": "PT1M",
+                "window": "PT5M",
+                "query": "traces | where customDimensions.event == \"queue.stuck\""
+              },
+              {
+                "name": "breaker-open",
+                "severity": 1,
+                "frequency": "PT1M",
+                "window": "PT5M",
+                "query": "traces | where customDimensions.event == \"breaker.opened\""
+              },
+              {
+                "name": "unpriced-usage",
+                "severity": 2,
+                "frequency": "PT5M",
+                "window": "PT1H",
+                "query": "traces | where customDimensions.event == \"usage.unpriced\""
+              },
+              {
+                "name": "failure-rate",
+                "severity": 2,
+                "frequency": "PT5M",
+                "window": "PT1H",
+                "query": "      traces\r\n      | where customDimensions.event in (\"job.completed\", \"job.failed\")\r\n      | summarize finished=count(), failed=countif(customDimensions.event == \"job.failed\")\r\n      | where (finished >= 20 and 100.0 * failed / finished > 5.0) or failed >= 3\r\n      "
+              },
+              {
+                "name": "dead-letter",
+                "severity": 3,
+                "frequency": "PT5M",
+                "window": "PT5M",
+                "query": "traces | where customDimensions.event == \"webhook.dead_lettered\""
+              },
+              {
+                "name": "registry-drift",
+                "severity": 2,
+                "frequency": "PT5M",
+                "window": "PT5M",
+                "query": "traces | where customDimensions.event == \"registry.drift\""
+              },
+              {
+                "name": "result-missing",
+                "severity": 2,
+                "frequency": "PT5M",
+                "window": "PT5M",
+                "query": "traces | where customDimensions.event == \"analysis.result_missing\""
+              },
+              {
+                "name": "crash-loop",
+                "severity": 2,
+                "frequency": "PT5M",
+                "window": "PT1H",
+                "query": "      traces\r\n      | where customDimensions.event == \"job.taken_over\" or tostring(customDimensions.errorCode) == \"WORKER_CRASH_LOOP\"\r\n      | summarize takeovers=countif(customDimensions.event == \"job.taken_over\"), crashes=countif(tostring(customDimensions.errorCode) == \"WORKER_CRASH_LOOP\")\r\n      | where crashes > 0 or takeovers > 1\r\n      "
+              },
+              {
+                "name": "unknown-calls",
+                "severity": 3,
+                "frequency": "PT1H",
+                "window": "P1D",
+                "query": "traces | where customDimensions.event == \"operation.unknown\""
+              }
+            ]
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Insights/actionGroups",
+              "apiVersion": "2023-01-01",
+              "name": "[format('{0}-alerts', parameters('base'))]",
+              "location": "global",
+              "properties": {
+                "copy": [
+                  {
+                    "name": "emailReceivers",
+                    "count": "[length(parameters('alertEmails'))]",
+                    "input": {
+                      "name": "[format('operator-{0}', copyIndex('emailReceivers'))]",
+                      "emailAddress": "[parameters('alertEmails')[copyIndex('emailReceivers')]]",
+                      "useCommonAlertSchema": true
+                    }
+                  }
+                ],
+                "groupShortName": "DocAi",
+                "enabled": true
+              }
+            },
+            {
+              "type": "Microsoft.Consumption/budgets",
+              "apiVersion": "2024-08-01",
+              "name": "[format('{0}-monthly', parameters('base'))]",
+              "properties": {
+                "category": "Cost",
+                "amount": "[parameters('monthlyBudget')]",
+                "timeGrain": "Monthly",
+                "timePeriod": {
+                  "startDate": "[format('{0}T00:00:00Z', parameters('budgetStartDate'))]"
+                },
+                "notifications": {
+                  "Actual80": {
+                    "enabled": true,
+                    "operator": "GreaterThanOrEqualTo",
+                    "threshold": 80,
+                    "thresholdType": "Actual",
+                    "contactEmails": "[parameters('alertEmails')]",
+                    "contactGroups": [
+                      "[resourceId('Microsoft.Insights/actionGroups', format('{0}-alerts', parameters('base')))]"
+                    ]
+                  },
+                  "Actual100": {
+                    "enabled": true,
+                    "operator": "GreaterThanOrEqualTo",
+                    "threshold": 100,
+                    "thresholdType": "Actual",
+                    "contactEmails": "[parameters('alertEmails')]",
+                    "contactGroups": [
+                      "[resourceId('Microsoft.Insights/actionGroups', format('{0}-alerts', parameters('base')))]"
+                    ]
+                  }
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Insights/actionGroups', format('{0}-alerts', parameters('base')))]"
+              ]
+            },
+            {
+              "copy": {
+                "name": "logAlerts",
+                "count": "[length(variables('alerts'))]"
+              },
+              "condition": "[parameters('enableAlerts')]",
+              "type": "Microsoft.Insights/scheduledQueryRules",
+              "apiVersion": "2023-12-01",
+              "name": "[format('{0}-{1}', parameters('base'), variables('alerts')[copyIndex()].name)]",
+              "location": "[parameters('location')]",
+              "kind": "LogAlert",
+              "properties": {
+                "displayName": "[format('{0} {1}', parameters('base'), variables('alerts')[copyIndex()].name)]",
+                "enabled": true,
+                "severity": "[variables('alerts')[copyIndex()].severity]",
+                "scopes": [
+                  "[parameters('insightsId')]"
+                ],
+                "evaluationFrequency": "[variables('alerts')[copyIndex()].frequency]",
+                "windowSize": "[variables('alerts')[copyIndex()].window]",
+                "autoMitigate": true,
+                "criteria": {
+                  "allOf": [
+                    {
+                      "query": "[variables('alerts')[copyIndex()].query]",
+                      "timeAggregation": "Count",
+                      "operator": "GreaterThan",
+                      "threshold": 0,
+                      "failingPeriods": {
+                        "numberOfEvaluationPeriods": 1,
+                        "minFailingPeriodsToAlert": 1
+                      }
+                    }
+                  ]
+                },
+                "actions": {
+                  "actionGroups": [
+                    "[resourceId('Microsoft.Insights/actionGroups', format('{0}-alerts', parameters('base')))]"
+                  ]
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Insights/actionGroups', format('{0}-alerts', parameters('base')))]"
+              ]
+            },
+            {
+              "condition": "[and(parameters('enableAlerts'), not(empty(parameters('appHost'))))]",
+              "type": "Microsoft.Insights/webtests",
+              "apiVersion": "2022-06-15",
+              "name": "[format('{0}-readiness', parameters('base'))]",
+              "location": "[parameters('location')]",
+              "tags": {
+                "[format('hidden-link:{0}', parameters('insightsId'))]": "Resource"
+              },
+              "kind": "standard",
+              "properties": {
+                "SyntheticMonitorId": "[format('{0}-readiness', parameters('base'))]",
+                "Name": "[format('{0}-readiness', parameters('base'))]",
+                "Kind": "standard",
+                "Enabled": true,
+                "Frequency": 300,
+                "Timeout": 30,
+                "RetryEnabled": true,
+                "Locations": [
+                  {
+                    "Id": "emea-fr-pra-edge"
+                  },
+                  {
+                    "Id": "emea-nl-ams-azr"
+                  },
+                  {
+                    "Id": "emea-gb-db3-azr"
+                  }
+                ],
+                "Request": {
+                  "RequestUrl": "[format('https://{0}/health/ready', parameters('appHost'))]",
+                  "HttpVerb": "GET",
+                  "FollowRedirects": false
+                },
+                "ValidationRules": {
+                  "ExpectedHttpStatusCode": 200,
+                  "SSLCheck": true,
+                  "SSLCertRemainingLifetimeCheck": 7
+                }
+              }
+            },
+            {
+              "condition": "[and(parameters('enableAlerts'), not(empty(parameters('appHost'))))]",
+              "type": "Microsoft.Insights/metricAlerts",
+              "apiVersion": "2018-03-01",
+              "name": "[format('{0}-readiness-failed', parameters('base'))]",
+              "location": "global",
+              "properties": {
+                "severity": 1,
+                "enabled": true,
+                "autoMitigate": true,
+                "scopes": [
+                  "[resourceId('Microsoft.Insights/webtests', format('{0}-readiness', parameters('base')))]",
+                  "[parameters('insightsId')]"
+                ],
+                "evaluationFrequency": "PT1M",
+                "windowSize": "PT5M",
+                "criteria": {
+                  "odata.type": "Microsoft.Azure.Monitor.WebtestLocationAvailabilityCriteria",
+                  "webTestId": "[resourceId('Microsoft.Insights/webtests', format('{0}-readiness', parameters('base')))]",
+                  "componentId": "[parameters('insightsId')]",
+                  "failedLocationCount": 2
+                },
+                "actions": [
+                  {
+                    "actionGroupId": "[resourceId('Microsoft.Insights/actionGroups', format('{0}-alerts', parameters('base')))]"
+                  }
+                ],
+                "description": "Readiness failed in at least two of three test locations."
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Insights/actionGroups', format('{0}-alerts', parameters('base')))]",
+                "[resourceId('Microsoft.Insights/webtests', format('{0}-readiness', parameters('base')))]"
+              ]
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', format('{0}-app-{1}', variables('base'), variables('unique')))]",
+        "[resourceId('Microsoft.Insights/components', format('{0}-insights', variables('base')))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "hosting": {
+      "type": "object",
+      "value": "[if(variables('cloudHosting'), createObject('appServiceName', format('{0}-app-{1}', variables('base'), variables('unique')), 'defaultHostName', reference(resourceId('Microsoft.Web/sites', format('{0}-app-{1}', variables('base'), variables('unique'))), '2024-11-01').defaultHostName, 'appPrincipalId', if(variables('cloudHosting'), reference(resourceId('Microsoft.Web/sites', format('{0}-app-{1}', variables('base'), variables('unique'))), '2024-11-01', 'full').identity.principalId, parameters('onPremisesPrincipalObjectId')), 'possibleOutboundIpAddresses', reference(resourceId('Microsoft.Web/sites', format('{0}-app-{1}', variables('base'), variables('unique'))), '2024-11-01').possibleOutboundIpAddresses, 'sqlServerEndpoint', reference(resourceId('Microsoft.Sql/servers', format('{0}-sql-{1}', variables('base'), variables('unique'))), '2023-08-01').fullyQualifiedDomainName, 'databaseName', format('{0}-db', variables('base'))), if(variables('localHosting'), createObject(), createObject('servicePrincipalObjectId', if(variables('cloudHosting'), reference(resourceId('Microsoft.Web/sites', format('{0}-app-{1}', variables('base'), variables('unique'))), '2024-11-01', 'full').identity.principalId, parameters('onPremisesPrincipalObjectId')))))]"
+    },
+    "blobEndpoint": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Storage/storageAccounts', variables('storageName')), '2025-01-01').primaryEndpoints.blob]"
+    },
+    "keyVaultEndpoint": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.KeyVault/vaults', format('{0}-kv-{1}', variables('base'), take(variables('unique'), 5))), '2024-11-01').vaultUri]"
+    },
+    "documentIntelligenceEndpoint": {
+      "type": "string",
+      "value": "[if(equals(parameters('documentIntelligenceMode'), 'existing'), reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('existingDocumentIntelligenceResourceGroup')), 'Microsoft.CognitiveServices/accounts', parameters('existingDocumentIntelligenceName')), '2025-06-01').endpoint, reference(resourceId('Microsoft.CognitiveServices/accounts', format('{0}-di-{1}', variables('base'), variables('unique'))), '2025-06-01').endpoint)]"
+    }
+  }
+}

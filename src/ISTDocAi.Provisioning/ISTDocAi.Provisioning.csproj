@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0-windows</TargetFramework></PropertyGroup>
+  <ItemGroup><PackageReference Include="System.Security.Cryptography.ProtectedData" /><PackageReference Include="Microsoft.Data.SqlClient" /></ItemGroup>
+  <ItemGroup><EmbeddedResource Include="../../sql/kit/CreateAIDocumentTables.sql" LogicalName="ISTDocAi.Provisioning.CreateAIDocumentTables.sql" /></ItemGroup>
+<PropertyGroup><TargetFramework>net10.0-windows</TargetFramework><RuntimeIdentifiers>win-x64</RuntimeIdentifiers><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings><AssemblyName>ISTDocAi.Provisioning</AssemblyName></PropertyGroup></Project>
+

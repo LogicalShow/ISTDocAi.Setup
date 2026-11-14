@@ -1,0 +1,2 @@
+       OR EXISTS (SELECT 1 FROM dbo.ModelRegistry WITH (UPDLOCK,HOLDLOCK) WHERE ModelId='$classifier'
+                  AND (DocumentTypeCode<>'AUTO' OR Kind<>'classify' OR ShippingLineCode IS NOT NULL))

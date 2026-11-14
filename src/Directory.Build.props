@@ -1,0 +1,5 @@
+<Project>
+  <Import Project="../Directory.Build.props" />
+  <!-- Keep normal builds and single-file publishing on the same locked SDK tool dependency graph. -->
+  <PropertyGroup><EnableSingleFileAnalyzer>true</EnableSingleFileAnalyzer><RuntimeIdentifiers>win-x64</RuntimeIdentifiers></PropertyGroup>
+</Project>

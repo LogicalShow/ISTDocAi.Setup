@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+<PropertyGroup><TargetFramework>net10.0-windows</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><AssemblyName>ISTDocAi.Setup.Tests</AssemblyName><RootNamespace>ISTDocAi.Setup.Tests</RootNamespace><IsPackable>false</IsPackable><IsTestProject>true</IsTestProject></PropertyGroup>
+<ItemGroup><PackageReference Include="Microsoft.NET.Test.Sdk" /><PackageReference Include="NUnit" /><PackageReference Include="NUnit.Analyzers" PrivateAssets="all" /><PackageReference Include="NUnit3TestAdapter" /><PackageReference Include="PdfPig" /></ItemGroup>
+<ItemGroup><ProjectReference Include="../../src/ISTDocAi.OperatorTool/ISTDocAi.OperatorTool.csproj" /><ProjectReference Include="../../src/ISTDocAi.Provisioning/ISTDocAi.Provisioning.csproj" /><ProjectReference Include="$(ISTDocAiRoot)/ISTDocAi.Infrastructure/ISTDocAi.Infrastructure.csproj" /></ItemGroup>
+<ItemGroup><ProjectReference Include="$(ISTDocAiRoot)/ISTDocAi.Infrastructure.Tests/ISTDocAi.Infrastructure.Tests.csproj" /><ProjectReference Include="..\..\src\ISTDocAi.DevSetup\ISTDocAi.DevSetup.csproj" /></ItemGroup>
+<ItemGroup><None Include="../../src/ISTDocAi.Provisioning/Examples/register-consumer-FWD-UNF.sql" Link="Examples/register-consumer-FWD-UNF.sql" CopyToOutputDirectory="PreserveNewest" /></ItemGroup></Project>

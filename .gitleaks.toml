@@ -1,0 +1,19 @@
+title = "DocAi: default rules with exact published test-vector exceptions"
+[extend]
+useDefault = true
+
+# Published HMAC test vector in contract tests; not a deployment credential.
+[[allowlists]]
+description = "Published contract HMAC vector"
+condition = "AND"
+paths = ['''^ISTDocAi.Application.Tests/DocAi/Contracts/ContractTests\.cs$''']
+regexTarget = "match"
+regexes = ['''ZG9jYWktdGVzdC12ZWN0b3Itc2VjcmV0LTMyYnl0ZXM=''']
+
+# Same published HMAC vector reused by worker test doubles.
+[[allowlists]]
+description = "Published vector in worker doubles"
+condition = "AND"
+paths = ['''^ISTDocAi.Infrastructure.Tests/Worker/WebhookFakes\.cs$''', '''^ISTDocAi.Infrastructure.Tests/Runtime/WebhookFakes\.cs$''']
+regexTarget = "match"
+regexes = ['''ZG9jYWktdGVzdC12ZWN0b3Itc2VjcmV0LTMyYnl0ZXM=''']

@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType><TargetFramework>net10.0-windows</TargetFramework>
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationManifest>app.manifest</ApplicationManifest><IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../ISTDocAi.Provisioning/ISTDocAi.Provisioning.csproj" />
+    <PackageReference Include="PDFsharp-MigraDoc" />
+    <PackageReference Include="Azure.Identity" />
+    <EmbeddedResource Include="../../azure/infra/main.json" LogicalName="ISTDocAi.OperatorTool.azure.main.json" />
+    <EmbeddedResource Include="Templates/*.sql" />
+    <EmbeddedResource Include="../../sql/reference/*.sql" Link="Reference/%(Filename)%(Extension)" />
+    <EmbeddedResource Include="../../sql/operator/*.sql" Link="Operator/%(Filename)%(Extension)" />
+    <None Update="THIRD-PARTY-NOTICES.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
