@@ -96,6 +96,23 @@ public sealed class DevSetupSqlTests : GuardedToolTests
     }
     private static async Task Execute(string cs,string sql)
     { using var c=new SqlConnection(cs); await c.OpenAsync(); using var cmd=new SqlCommand(sql,c){CommandTimeout=300}; await cmd.ExecuteNonQueryAsync(); }
+    [Test]
+    public async Task Kit_status_constraint_upgrades_old_shape_and_replays()
+    {
+        var sql = KitDatabase.Sql("FWD", "UNF");
+        await Execute(company, sql);
+        await Execute(company, "ALTER TABLE dbo.AIDocumentExtraction DROP CONSTRAINT CK_AIDocumentExtraction_ExtractionStatus; ALTER TABLE dbo.AIDocumentExtraction WITH CHECK ADD CONSTRAINT CK_AIDocumentExtraction_ExtractionStatus CHECK (ExtractionStatus IN ('Pending', 'Submitted', 'Completed', 'Failed')); ");
+        await Execute(company, sql);
+        await Execute(company, sql);
+        await Execute(company, "INSERT dbo.AIDocumentExtraction(ID, ExtractionStatus, RequestedDocumentTypeCode, StoredFileName, OriginalFileName, FileSha256) VALUES(NEWID(), 'Cancelled', 'AUTO', 'fixture.pdf', N'fixture.pdf', CONVERT(binary(32), 1));");
+        using var c = new SqlConnection(company); await c.OpenAsync();
+        using var cmd = new SqlCommand("SELECT COUNT(*) FROM dbo.AIDocumentExtraction WHERE ExtractionStatus = 'Cancelled'; SELECT COUNT(*) FROM sys.check_constraints WHERE name = 'CK_AIDocumentExtraction_ExtractionStatus' AND is_disabled = 0 AND is_not_trusted = 0;", c);
+        using var reader = await cmd.ExecuteReaderAsync();
+        Assert.That(await reader.ReadAsync(), Is.True); Assert.That(reader.GetInt32(0), Is.EqualTo(1));
+        Assert.That(await reader.NextResultAsync(), Is.True); Assert.That(await reader.ReadAsync(), Is.True);
+        Assert.That(reader.GetInt32(0), Is.EqualTo(1));
+    }
+
     private async Task<string> Snapshot()
     {
         using var c=new SqlConnection(service); await c.OpenAsync(); var result=new StringBuilder();

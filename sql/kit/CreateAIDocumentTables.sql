@@ -13,7 +13,7 @@
 --   CustomerAliases       customer names learnt from confirmed reviews.
 --   DocAiIdentity         the company code this database sends to the DocAi service.
 --
--- Safe to run again: it only creates what is missing. It never drops, overwrites or deletes, and it
+-- Safe to run again: it creates missing objects and upgrades the status constraint. It never deletes data, and it
 -- refuses to change an existing company code. Everything runs in one transaction: on any error,
 -- nothing is changed. It does not touch the old development tables (AiDocuments, AiBills, AiBillRows,
 -- DocumentReviews, BillReviews) and does not copy data from them.
@@ -133,10 +133,21 @@ BEGIN TRY
             ReviewContextJson         nvarchar(max)    NULL,
 
             CONSTRAINT CK_AIDocumentExtraction_ExtractionStatus
-                CHECK (ExtractionStatus IN ('Pending', 'Submitted', 'Completed', 'Failed')),
+                CHECK (ExtractionStatus IN ('Pending', 'Submitted', 'Completed', 'Failed', 'Cancelled')),
             CONSTRAINT CK_AIDocumentExtraction_BillsStatus CHECK (BillsStatus IN ('Ready', 'Failed')),
             CONSTRAINT CK_AIDocumentExtraction_ReviewOwnerUserID CHECK (ReviewOwnerUserID > 0)
         );
+
+    -- Upgrade the previous status constraint once; a rerun leaves it untouched.
+    IF EXISTS (SELECT 1 FROM sys.check_constraints
+        WHERE parent_object_id = OBJECT_ID(N'dbo.AIDocumentExtraction')
+          AND name = N'CK_AIDocumentExtraction_ExtractionStatus'
+          AND definition NOT LIKE '%''Cancelled''%')
+    BEGIN
+        ALTER TABLE dbo.AIDocumentExtraction DROP CONSTRAINT CK_AIDocumentExtraction_ExtractionStatus;
+        ALTER TABLE dbo.AIDocumentExtraction WITH CHECK ADD CONSTRAINT CK_AIDocumentExtraction_ExtractionStatus
+            CHECK (ExtractionStatus IN ('Pending', 'Submitted', 'Completed', 'Failed', 'Cancelled'));
+    END;
 
     -- Dynamic SQL so that an older server stops at the version check above, not at compile time.
     IF OBJECT_ID(N'dbo.CK_AIDocumentExtraction_ReviewContextJson', N'C') IS NULL

@@ -36,6 +36,16 @@ public sealed class KitDatabaseTests
         return (SqlException)typeof(SqlException).GetMethod("CreateException", BindingFlags.Static | BindingFlags.NonPublic, [typeof(SqlErrorCollection), typeof(string)])!.Invoke(null, [errors, "10"])!;
     }
     [Test]
+    public void Cancelled_status_and_idempotent_checked_upgrade_are_embedded()
+    {
+        var sql = KitDatabase.Sql("FWD", "UNF");
+        Assert.That(sql, Does.Contain("'Pending', 'Submitted', 'Completed', 'Failed', 'Cancelled'"));
+        Assert.That(sql, Does.Contain("definition NOT LIKE '%''Cancelled''%'"));
+        Assert.That(sql, Does.Contain("DROP CONSTRAINT CK_AIDocumentExtraction_ExtractionStatus"));
+        Assert.That(sql, Does.Contain("WITH CHECK ADD CONSTRAINT CK_AIDocumentExtraction_ExtractionStatus"));
+    }
+
+    [Test]
     public void Runtime_sql_replaces_both_customer_declarations()
     {
         var sql = KitDatabase.Sql("ABC", "XYZ");

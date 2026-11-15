@@ -206,6 +206,14 @@ OUTPUT inserted.JobId, inserted.RunNo, inserted.LeaseToken, inserted.TakeoverCou
 SET XACT_ABORT ON;
 BEGIN TRANSACTION;
 
+-- Serialize the pre-POST decision with consumer cancellation.
+DECLARE @currentRun smallint;
+SELECT @currentRun = RunNo FROM dbo.Jobs WITH (UPDLOCK)
+WHERE JobId = @jobId AND Status = 'Processing' AND LeaseToken = @leaseToken;
+IF EXISTS (SELECT 1 FROM dbo.JobRuns WHERE JobId=@jobId AND RunNo=@currentRun AND CancelRequestedAtUtc IS NOT NULL)
+   AND NOT EXISTS (SELECT 1 FROM dbo.AzureOperations WHERE JobId=@jobId AND RunNo=@currentRun AND State <> 'Failed')
+    THROW 50017, 'Run cancelled by the consumer.', 1;
+
 IF (SELECT COUNT(*) FROM dbo.AzureOperations AS o WITH (UPDLOCK, HOLDLOCK)
     JOIN dbo.Jobs AS j ON j.JobId = o.JobId AND j.RunNo = o.RunNo
     WHERE j.JobId = @jobId AND o.State = 'Unknown') >= 2
@@ -955,3 +963,60 @@ WHERE ConsumerId = @consumerId AND Status = 'Pending' AND LastStatusCode IS NULL
                     'CONNECTION_FAILED:IMMEDIATE','TIMEOUT:IMMEDIATE','TLS_FAILED:IMMEDIATE')
   AND (LeaseExpiresAtUtc IS NULL OR LeaseExpiresAtUtc < SYSUTCDATETIME())
   AND NextAttemptAtUtc > SYSUTCDATETIME();
+
+-- [S32] API: cancel the run bound to this consumer request; never alter billing facts or send a webhook.
+SET XACT_ABORT ON;
+BEGIN TRANSACTION;
+DECLARE @jobId uniqueidentifier, @runNo smallint, @currentRun smallint,
+        @status varchar(12), @runStatus varchar(12), @code varchar(50), @outcome varchar(12);
+SELECT @jobId=JobId, @runNo=RunNo FROM dbo.JobSubmissions
+WHERE ConsumerId=@consumerId AND ClientRequestId=@requestId;
+IF @jobId IS NULL
+BEGIN
+    COMMIT;
+    RETURN;
+END;
+EXEC dbo.AcquirePageQuotaLock @consumerId;
+SELECT @status=Status, @currentRun=RunNo FROM dbo.Jobs WITH (UPDLOCK,HOLDLOCK) WHERE JobId=@jobId;
+SELECT @runStatus=Status, @code=ErrorCode FROM dbo.JobRuns WHERE JobId=@jobId AND RunNo=@runNo;
+IF @runStatus <> 'Active'
+    SET @outcome=CASE WHEN @runStatus='Failed' AND @code='CANCELLED' THEN 'Cancelled' ELSE 'Finished' END;
+ELSE
+BEGIN
+    UPDATE dbo.JobRuns SET CancelRequestedAtUtc=COALESCE(CancelRequestedAtUtc,SYSUTCDATETIME())
+    WHERE JobId=@jobId AND RunNo=@runNo;
+    IF EXISTS (SELECT 1 FROM dbo.AzureOperations WHERE JobId=@jobId AND RunNo=@runNo AND State <> 'Failed')
+        SET @outcome='Continuing';
+    ELSE IF @status='Queued' AND @currentRun=@runNo
+    BEGIN
+        UPDATE dbo.Jobs SET Status='Failed', ErrorCode='CANCELLED', ErrorMessage=N'Cancelled by the consumer.',
+            LeaseToken=NULL, LeaseExpiresAtUtc=NULL, CompletedAtUtc=SYSUTCDATETIME() WHERE JobId=@jobId;
+        UPDATE dbo.JobRuns SET Status='Failed', ErrorCode='CANCELLED', ErrorMessage=N'Cancelled by the consumer.',
+            CompletedAtUtc=SYSUTCDATETIME() WHERE JobId=@jobId AND RunNo=@runNo;
+        EXEC dbo.SettlePageReservation @jobId,@runNo;
+        SET @outcome='Cancelled';
+    END
+    ELSE SET @outcome=CASE WHEN @status='Processing' AND @currentRun=@runNo THEN 'Cancelling' ELSE 'Continuing' END;
+END;
+COMMIT;
+SELECT @jobId AS JobId,@runNo AS RunNo,@outcome AS Outcome;
+
+-- [S33] Worker: finish a cancellation signalled by S4a, fenced by the lease and the billing predicate.
+SET XACT_ABORT ON;
+BEGIN TRANSACTION;
+DECLARE @consumerId smallint=(SELECT ConsumerId FROM dbo.Jobs WHERE JobId=@jobId), @runNo smallint, @applied int=0;
+EXEC dbo.AcquirePageQuotaLock @consumerId;
+SELECT @runNo=RunNo FROM dbo.Jobs WITH (UPDLOCK,HOLDLOCK)
+WHERE JobId=@jobId AND Status='Processing' AND LeaseToken=@leaseToken;
+IF EXISTS (SELECT 1 FROM dbo.JobRuns WHERE JobId=@jobId AND RunNo=@runNo AND CancelRequestedAtUtc IS NOT NULL)
+   AND NOT EXISTS (SELECT 1 FROM dbo.AzureOperations WHERE JobId=@jobId AND RunNo=@runNo AND State <> 'Failed')
+BEGIN
+    UPDATE dbo.Jobs SET Status='Failed', ErrorCode='CANCELLED', ErrorMessage=N'Cancelled by the consumer.',
+        LeaseToken=NULL, LeaseExpiresAtUtc=NULL, CompletedAtUtc=SYSUTCDATETIME() WHERE JobId=@jobId;
+    UPDATE dbo.JobRuns SET Status='Failed', ErrorCode='CANCELLED', ErrorMessage=N'Cancelled by the consumer.',
+        CompletedAtUtc=SYSUTCDATETIME() WHERE JobId=@jobId AND RunNo=@runNo;
+    EXEC dbo.SettlePageReservation @jobId,@runNo;
+    SET @applied=1;
+END;
+COMMIT;
+SELECT @applied;

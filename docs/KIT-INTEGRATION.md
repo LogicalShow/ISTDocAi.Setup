@@ -5,6 +5,7 @@ Set `DocAi:BaseUrl` to the ISTDocAi host HTTPS origin. The kit is v2-only at the
 | Call | Route | X-Culture |
 | --- | --- | --- |
 | Submit/replay | POST /api/v2/jobs | en |
+| Cancel (no body) | POST /api/v2/jobs/cancel?requestId={clientRequestId} | en |
 | Poll | GET /api/v2/jobs/{id}?runNo={runNo} | en |
 | Catalog | GET /api/v2/catalog | ar for Arabic UI, otherwise en |
 | Usage | GET /api/v2/usage?months={months} | ar for Arabic UI, otherwise en |
@@ -13,6 +14,10 @@ Set `DocAi:BaseUrl` to the ISTDocAi host HTTPS origin. The kit is v2-only at the
 Send X-Api-Key and set X-Culture on each request, never shared HttpClient defaults. Persisted submit/poll errors remain English. Culture does not change canonical bytes, numeric parsing or signatures.
 
 Success is `{IsSuccess:true,IsFailure:false,Error:{Code:"",Message:"",Type:"None"},Value:...}`. Decode Value once before projecting metadata. Transport failures expose Error.Code/Message and Extensions (CorrelationId, RequiredPages, AvailablePages, RetryAfter where applicable). Preserve HTTP status and the Retry-After header; a failed job is still a successful HTTP 200 read with Value.Status=Failed and Value.Error. Preserve Result as raw UTF-8 JSON: do not deserialize/re-encode its decimal tokens, escapes or property order. Unknown routes can return an empty 404.
+
+Cancel uses the same API key as submit. HTTP 200 Value contains JobId, RunNo and Outcome: `Cancelled`, `Cancelling`, `Continuing` or `Finished`; an unknown request returns HTTP 404 `JOB_NOT_FOUND`. The service stops only a run Azure has not billed and cannot bill. Otherwise reading finishes and is charged once; uploading the same file returns its existing result without another charge.
+
+The kit's authenticated `POST /api/DocAi/Cancel?pOperationID={operationId}&pLocalId={localId}` uses the Status operation scope. It atomically marks Pending/Submitted as Cancelled, retains the row and clears NextSubmitAt. It returns immediately and queues one remote attempt with a 10-second timeout. A successful submit racing with cancellation makes one further attempt after its guarded store detects Cancelled. There is no retry loop. Late webhooks/polls cannot revive cancelled rows; valid signed webhook deliveries still receive 200. The dialog resets to an empty selection; choosing a file again gets a fresh intent ID.
 
 Webhook body is `{EventId,EventType,OccurredAtUtc,Job}` (no Result envelope); Job has the same DTO shape as GET Value. The destination remains the kit's existing `api/DocAi/Webhook`. Verify the unchanged HMAC-SHA256 over `timestamp + '.' + rawBodyBytes`, with existing X-Timestamp/X-Signature headers and 300-second freshness window, before decoding. Accept either rotation slot; reject tampering, expiry and a signed v1 body without storing it. Incoming webhooks have no X-Culture rule.
 
