@@ -15,7 +15,10 @@
    - Visual Studio 2026.
    - .NET 10 SDK، الإصدار 10.0.401 أو أحدث.
    - SQL Server.
-2. **اعرف اسم الـ SQL Server عندك.** ده الاسم اللي بتكتبه في SSMS في خانة Server name، زي `localhost` أو `localhost\SQLEXPRESS`.
+2. **اعرف اسم الـ SQL Server عندك.** اكتبه زي ما هو مكتوب في SSMS في خانة Server name بالظبط.
+   - مش متأكد؟ شغّل في PowerShell: `Get-Service -Name 'MSSQL*'`
+   - لو ظهر `MSSQLSERVER` يبقى تكتب **`.`** (نقطة بس). ما تكتبش `localhost`: على SQL Server الجديد بيكون TCP/IP مقفول، و`localhost` مش هتتوصل.
+   - لو ظهر `MSSQL$SQLEXPRESS` يبقى تكتب `.\SQLEXPRESS`، وكده مع أي اسم تاني.
 3. **اعمل clone للاتنين في أي مكان على جهازك:**
    - repo ISTDocAi، والرابط هتاخده من Anter.
    - الكيت على branch اسمه `integration/docai-front`.
@@ -64,5 +67,5 @@
 - **`ACTION NEEDED`:** اعمل اللي مكتوب فيها، وافتح الـ exe تاني. الـ exe بيكمّل من غير ما يكرر اللي خلص.
 - **`REFUSED`:** وقّف، وابعت نص الرسالة لـ Anter.
 - **`PFX password is wrong`:** اتأكد من كلمة السر واكتبها تاني.
-- **`Cannot connect to SQL Server`:** اتأكد من اسم الـ SQL Server وإنه شغال.
+- **`Cannot connect to SQL Server`:** اتأكد من اسم الـ SQL Server وإنه شغال. لو كتبت `localhost` جرّب **`.`** بدلها (أو `.\اسم_الـinstance`).
 - **ما تستخدمش `--rotate`** إلا لو Anter قالك.
